@@ -1,0 +1,28 @@
+name: DeathCoins
+version: 1.0-SNAPSHOT
+main: su.mrhantur.Main
+description: Adds death coins that allows to teleport to the death point
+author: MrHantur
+website: https://mrhantur.su
+api-version: '1.21.5'
+prefix: DeathCoins
+commands:
+  teleporttodeath:
+    description: Teleport to the last death point
+    usage: /teleporttodeath
+    permission: deathcoins.default
+  deathcoins:
+    description: Add/remove death coins
+    usage: /deathcoins <nickname> <add|remove> <int>
+    permission: deathcoins.control
+  getdeathcoords:
+    description: Tells coordinates where player died
+    usage: /getdeathcoords <nickname>
+    permission: deathcoins.control
+permissions:
+  deathcoins.control:
+    description: "Permission for controlling plugin"
+    default: op
+  deathcoins.default:
+    description: "This is permission for regular commands"
+    default: true
