@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class Main extends JavaPlugin implements Listener {
+    private GUI gui;
+
     @Override
     public void onEnable() {
         this.getServer().getPluginManager().registerEvents(this, this);
@@ -37,6 +39,7 @@ public class Main extends JavaPlugin implements Listener {
         getCommand("getdeathcoords").setExecutor(this);
         getCommand("deathcoins").setExecutor(this);
         getCommand("deathcoins").setTabCompleter(this);
+        gui = new GUI(this);
 
         Bukkit.getConsoleSender().sendMessage("Death Coins plugin enabled!\n" +
                                                 "⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⠤⠤⠒⠒⠒⠒⠲⠦⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
@@ -69,7 +72,7 @@ public class Main extends JavaPlugin implements Listener {
         if (!player.hasPlayedBefore()) {
             savePlayerLocation(player);
 
-            getConfig().set(nickname + ".coins", 0);
+            getConfig().set(nickname + ".coins", 0.0);
             saveConfig();
         }
     }
@@ -128,7 +131,7 @@ public class Main extends JavaPlugin implements Listener {
             return true;
         } else if (command.getName().equalsIgnoreCase("deathcoins")) {
             if (args.length < 3) {
-                sender.sendMessage("Подсказка: /deathcoins <nickname> <add|remove> <int>");
+                sender.sendMessage("Подсказка: /deathcoins <nickname> <add|remove> <double>");
             } else {
                 String nickname = getPlayerExactIgnoreCase(args[0]).getName();
                 // СЛЕДУЮЩИХ ПРОВЕРОК ЛУЧШЕ НЕ ДОПУСКАТЬ,
@@ -143,26 +146,30 @@ public class Main extends JavaPlugin implements Listener {
                     sender.sendMessage("Пришлось принудительно создать данные для " + nickname);
                 }
                 if (!getConfig().contains(nickname + ".coins")) {
-                    getConfig().set(nickname + ".coins", 0); // Если нет, то ставим 0
+                    getConfig().set(nickname + ".coins", 0.0); // Если нет, то ставим 0
                     saveConfig();
                 }
                 if (args[1].equalsIgnoreCase("add")) {
-                    getPlayerExactIgnoreCase(args[0]).sendMessage(ChatColor.GREEN + "Вы заработали монеты смерти!");
-                    getConfig().set(nickname + ".coins", getConfig().getInt(nickname + ".coins") + Integer.parseInt(args[2]));
+                    getPlayerExactIgnoreCase(args[0]).sendMessage(ChatColor.GREEN + "Вы заработали немного кусочков монет смерти!");
+                    double coins = getConfig().getDouble(nickname + ".coins");
+                    double toAdd = Double.parseDouble(args[2]);
+                    getConfig().set(nickname + ".coins", round(coins + toAdd, 2));
                     saveConfig();
                 } else if (args[1].equalsIgnoreCase("remove")) {
-                    getConfig().set(nickname + ".coins", getConfig().getInt(nickname + ".coins") - Integer.parseInt(args[2]));
+                    double coins = getConfig().getDouble(nickname + ".coins");
+                    double toAdd = Double.parseDouble(args[2]);
+                    getConfig().set(nickname + ".coins", round(coins - toAdd, 2));
                     saveConfig();
                 } else {
-                    sender.sendMessage("Неправильный формат данных, используйте /deathcoins <nickname> <add|remove> <int>");
+                    sender.sendMessage("Неправильный формат данных, используйте /deathcoins <nickname> <add|remove> <double>");
                     return true;
                 }
                 sender.sendMessage("Теперь у " + ChatColor.GRAY + nickname + " " + ChatColor.GOLD +
-                        getConfig().getInt(nickname + ".coins") + ChatColor.RESET + " монет");
+                        getConfig().getDouble(nickname + ".coins") + ChatColor.RESET + " монет");
             }
             return true;
         } else if (command.getName().equalsIgnoreCase("getdeathcoords")) {
-            String nickname = "MrHantur"; // Заглушка
+            String nickname;
             if (args.length < 1) {
                 nickname = sender.getName();
             } else {
@@ -173,6 +180,14 @@ public class Main extends JavaPlugin implements Listener {
             int z = getConfig().getInt(nickname + ".z");
             sender.sendMessage("Вы умерли на координатах " + ChatColor.GRAY +
                     x + " " + y + " " + z);
+            return true;
+        } else if (command.getName().equalsIgnoreCase("dc")) {
+            if (sender instanceof Player player) {
+                gui.openGUI(player); // Доступ к GUI
+            } else {
+                sender.sendMessage("Только игрок может использовать эту команду");
+            }
+            return true;
         }
         return false;
     }
@@ -186,6 +201,15 @@ public class Main extends JavaPlugin implements Listener {
         return null;
     }
 
+    private double round(double value, int places) {
+        if (places < 0) throw new IllegalArgumentException();
+        long factor = (long) Math.pow(10, places);
+        value = value * factor;
+        long tmp = Math.round(value);
+        return (double) tmp / factor;
+    }
+
+
     private void savePlayerLocation(Player player) {
         Location location = player.getLocation();
         String nickname = player.getName();
@@ -196,7 +220,7 @@ public class Main extends JavaPlugin implements Listener {
         saveConfig();
     }
 
-    private void teleportToDeath(Player player) {
+    void teleportToDeath(Player player) {
         if (player instanceof ConsoleCommandSender) {
             player.sendMessage("Эта команда для игроков!");
         }
@@ -215,18 +239,18 @@ public class Main extends JavaPlugin implements Listener {
 
         // Существуют ли монеты у игрока?
         if (!getConfig().contains(nickname + ".coins")) {
-            getConfig().set(nickname + ".coins", 0); // Если нет, то ставим 0
+            getConfig().set(nickname + ".coins", 0.0); // Если нет, то ставим 0
             saveConfig();
         }
 
-        int coins = getConfig().getInt(nickname + ".coins");
+        double coins = getConfig().getDouble(nickname + ".coins");
 
         if (coins < 1) {
             player.sendMessage(ChatColor.RED + "У вас недостаточно монет! Сейчас у вас " + coins);
             return;
         }
 
-        getConfig().set(nickname + ".coins", coins-1);
+        getConfig().set(nickname + ".coins", round(coins-1, 2));
         saveConfig();
         Bukkit.getConsoleSender().sendMessage(nickname + " ");
         Location teleportLocation = new Location(world, x, y, z);
@@ -241,7 +265,7 @@ public class Main extends JavaPlugin implements Listener {
             public void run() {
                 // Код, который выполнится через 5 секунд
                 if (!player.isOnline() || player.isDead()) {
-                    getConfig().set(nickname + ".coins", coins+1);
+                    getConfig().set(nickname + ".coins", round(coins+1, 2));
                     saveConfig();
                     Bukkit.getConsoleSender().sendMessage(nickname + " wasn't teleported to death location");
                     return;
