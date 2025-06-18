@@ -125,72 +125,96 @@ public class Main extends JavaPlugin implements Listener {
     }
 
 
+    @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("teleporttodeath")) {
-            teleportToDeath((Player) sender);
-            return true;
-        } else if (command.getName().equalsIgnoreCase("deathcoins")) {
-            if (args.length < 3) {
-                sender.sendMessage("Подсказка: /deathcoins <nickname> <add|remove> <double>");
-            } else {
-                String nickname = getPlayerExactIgnoreCase(args[0]).getName();
-                // СЛЕДУЮЩИХ ПРОВЕРОК ЛУЧШЕ НЕ ДОПУСКАТЬ,
-                // ОНИ НУЖНЫ, ЧТОБЫ НИЧЕГО НЕ СЛОМАЛОСЬ.
-                // ОНИ МОГУТ ПРИВЕСТИ К ЧЕМУ-ТО ОЧЕНЬ ПЛОХОМУ
-                if (!getConfig().contains(nickname + ".world")) {
-                    getConfig().set(nickname + ".world", "world");
-                    getConfig().set(nickname + ".x", 0.5);
-                    getConfig().set(nickname + ".y", 100);
-                    getConfig().set(nickname + ".z", 0.5);
-                    saveConfig();
-                    sender.sendMessage("Пришлось принудительно создать данные для " + nickname);
-                }
-                if (!getConfig().contains(nickname + ".coins")) {
-                    getConfig().set(nickname + ".coins", 0.0); // Если нет, то ставим 0
-                    saveConfig();
-                }
-                if (args[1].equalsIgnoreCase("add")) {
-                    getPlayerExactIgnoreCase(args[0]).sendMessage(ChatColor.GREEN + "Вы заработали немного кусочков монет смерти!");
-                    double coins = getConfig().getDouble(nickname + ".coins");
-                    double toAdd = Double.parseDouble(args[2]);
-                    getConfig().set(nickname + ".coins", round(coins + toAdd, 2));
-                    saveConfig();
-                } else if (args[1].equalsIgnoreCase("remove")) {
-                    double coins = getConfig().getDouble(nickname + ".coins");
-                    double toAdd = Double.parseDouble(args[2]);
-                    getConfig().set(nickname + ".coins", round(coins - toAdd, 2));
-                    saveConfig();
+        String name = command.getName().toLowerCase();
+
+        return switch (name) {
+            case "teleporttodeath" -> {
+                if (sender instanceof Player player) {
+                    teleportToDeath(player);
                 } else {
-                    sender.sendMessage("Неправильный формат данных, используйте /deathcoins <nickname> <add|remove> <double>");
-                    return true;
+                    sender.sendMessage("Эта команда только для игроков.");
                 }
-                sender.sendMessage("Теперь у " + ChatColor.GRAY + nickname + " " + ChatColor.GOLD +
-                        getConfig().getDouble(nickname + ".coins") + ChatColor.RESET + " монет");
+                yield true;
             }
-            return true;
-        } else if (command.getName().equalsIgnoreCase("getdeathcoords")) {
-            String nickname;
-            if (args.length < 1) {
-                nickname = sender.getName();
-            } else {
-                nickname = args[0];
+
+            case "deathcoins" -> {
+                handleDeathCoinsCommand(sender, args);
+                yield true;
             }
-            int x = getConfig().getInt(nickname + ".x");
-            int y = getConfig().getInt(nickname + ".y");
-            int z = getConfig().getInt(nickname + ".z");
-            sender.sendMessage("Вы умерли на координатах " + ChatColor.GRAY +
-                    x + " " + y + " " + z);
-            return true;
-        } else if (command.getName().equalsIgnoreCase("dc")) {
-            if (sender instanceof Player player) {
-                gui.openGUI(player); // Доступ к GUI
-            } else {
-                sender.sendMessage("Только игрок может использовать эту команду");
+
+            case "getdeathcoords" -> {
+                String nickname = args.length < 1 ? sender.getName() : args[0];
+                sendDeathCoords(sender, nickname);
+                yield true;
             }
-            return true;
-        }
-        return false;
+
+            case "dc" -> {
+                if (sender instanceof Player player) {
+                    gui.openGUI(player);
+                } else {
+                    sender.sendMessage("Только игрок может использовать эту команду");
+                }
+                yield true;
+            }
+
+            default -> false;
+        };
     }
+
+    private void sendDeathCoords(CommandSender sender, String nickname) {
+        int x = getConfig().getInt(nickname + ".x", 0);
+        int y = getConfig().getInt(nickname + ".y", 0);
+        int z = getConfig().getInt(nickname + ".z", 0);
+        sender.sendMessage("Вы умерли на координатах " + ChatColor.GRAY + x + " " + y + " " + z);
+    }
+
+
+    private void handleDeathCoinsCommand(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage("Подсказка: /deathcoins <nickname> <add|remove> <double>");
+            return;
+        }
+
+        Player target = getPlayerExactIgnoreCase(args[0]);
+        if (target == null) {
+            sender.sendMessage("Игрок не найден");
+            return;
+        }
+
+        String nickname = target.getName();
+        double coins = getConfig().getDouble(nickname + ".coins", 0.0);
+        double delta;
+
+        try {
+            delta = Double.parseDouble(args[2]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage("Третий аргумент должен быть числом");
+            return;
+        }
+
+        switch (args[1].toLowerCase()) {
+            case "add" -> {
+                coins = round(coins + delta, 2);
+                target.sendMessage(ChatColor.GREEN + "Вы заработали немного кусочков монет смерти!");
+            }
+            case "remove" -> {
+                coins = round(coins - delta, 2);
+            }
+            default -> {
+                sender.sendMessage("Неправильный формат: используйте add или remove");
+                return;
+            }
+        }
+
+        getConfig().set(nickname + ".coins", coins);
+        saveConfig();
+
+        sender.sendMessage("Теперь у " + ChatColor.GRAY + nickname + " " + ChatColor.GOLD +
+                coins + ChatColor.RESET + " монет");
+    }
+
 
     public Player getPlayerExactIgnoreCase(String name) {
         for (Player player : Bukkit.getOnlinePlayers()) {
@@ -221,51 +245,37 @@ public class Main extends JavaPlugin implements Listener {
     }
 
     void teleportToDeath(Player player) {
-        if (player instanceof ConsoleCommandSender) {
-            player.sendMessage("Эта команда для игроков!");
-        }
-
         String nickname = player.getName();
-        double x = getConfig().getDouble(nickname + ".x");
-        double y = getConfig().getDouble(nickname + ".y");
-        double z = getConfig().getDouble(nickname + ".z");
+        World world = Bukkit.getWorld(getConfig().getString(nickname + ".world", "world"));
+        double coins = getConfig().getDouble(nickname + ".coins", 0.0);
 
-        World world = Bukkit.getWorld(getConfig().getString(nickname + ".world"));
         if (world == null) {
-            player.sendMessage(ChatColor.RED + "Не удалось найти измерение, в котором вы умерли." +
-                    ChatColor.DARK_RED + "Обратитесь к админу с этой проблемой");
+            player.sendMessage(ChatColor.RED + "Мир не найден. Обратитесь к администратору.");
             return;
         }
-
-        // Существуют ли монеты у игрока?
-        if (!getConfig().contains(nickname + ".coins")) {
-            getConfig().set(nickname + ".coins", 0.0); // Если нет, то ставим 0
-            saveConfig();
-        }
-
-        double coins = getConfig().getDouble(nickname + ".coins");
 
         if (coins < 1) {
             player.sendMessage(ChatColor.RED + "У вас недостаточно монет! Сейчас у вас " + coins);
             return;
         }
 
-        getConfig().set(nickname + ".coins", round(coins-1, 2));
-        saveConfig();
-        Bukkit.getConsoleSender().sendMessage(nickname + " ");
+        double x = getConfig().getDouble(nickname + ".x");
+        double y = getConfig().getDouble(nickname + ".y");
+        double z = getConfig().getDouble(nickname + ".z");
         Location teleportLocation = new Location(world, x, y, z);
-        player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 700, 0));
-        player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 700, 2));
-        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 700, 1));
-        player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 100, 1));
+
+        applyBuffs(player);
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.2F, 1.0F);
         player.sendActionBar(ChatColor.AQUA + "Вы будете телепортированы через 5 секунд");
+
+        getConfig().set(nickname + ".coins", round(coins - 1, 2));
+        saveConfig();
+
         new BukkitRunnable() {
             @Override
             public void run() {
-                // Код, который выполнится через 5 секунд
                 if (!player.isOnline() || player.isDead()) {
-                    getConfig().set(nickname + ".coins", round(coins+1, 2));
+                    getConfig().set(nickname + ".coins", round(coins + 0.9, 2)); // Возврат монеты
                     saveConfig();
                     Bukkit.getConsoleSender().sendMessage(nickname + " wasn't teleported to death location");
                     return;
@@ -273,7 +283,14 @@ public class Main extends JavaPlugin implements Listener {
                 player.teleport(teleportLocation);
                 player.sendActionBar(ChatColor.AQUA + "Телепортация завершена!");
             }
-        }.runTaskLater(this, 100); // 100 тиков = 5 секунд
+        }.runTaskLater(this, 100);
+    }
+
+    private void applyBuffs(Player player) {
+        player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 700, 0));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 700, 2));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 700, 1));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 100, 1));
     }
 
 }

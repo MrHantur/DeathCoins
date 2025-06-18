@@ -1,5 +1,5 @@
 name: DeathCoins
-version: 1.0
+version: 1.1
 main: su.mrhantur.Main
 description: Adds death coins that allows to teleport to the death point
 author: MrHantur
@@ -20,7 +20,7 @@ commands:
     usage: /getdeathcoords <nickname>
     permission: deathcoins.control
   dc:
-    description: Open DeathCoinds GUI
+    description: Opens DeathCoinds GUI
     usage: /dc
     permission: deathcoins.default
 permissions:
