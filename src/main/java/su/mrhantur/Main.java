@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.Location;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -284,6 +285,49 @@ public class Main extends JavaPlugin implements Listener {
                 player.sendActionBar(ChatColor.AQUA + "Телепортация завершена!");
             }
         }.runTaskLater(this, 100);
+    }
+
+    public void askForAmount(Player sender, Player receiver) {
+        sender.sendMessage(ChatColor.AQUA + "Введите количество монет, которые хотите передать игроку " +
+                ChatColor.GOLD + receiver.getName());
+
+        Bukkit.getScheduler().runTask(this, () -> {
+            getServer().getPluginManager().registerEvents(new Listener() {
+                @EventHandler
+                public void onChat(org.bukkit.event.player.AsyncPlayerChatEvent event) {
+                    if (!event.getPlayer().equals(sender)) return;
+
+                    event.setCancelled(true);
+                    String message = event.getMessage();
+
+                    double amount;
+                    try {
+                        amount = Double.parseDouble(message);
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage(ChatColor.RED + "Введите корректное число.");
+                        return;
+                    }
+
+                    double senderCoins = getConfig().getDouble(sender.getName() + ".coins", 0.0);
+                    if (senderCoins < amount || amount <= 0) {
+                        sender.sendMessage(ChatColor.RED + "Недостаточно монет или сумма некорректна.");
+                        return;
+                    }
+
+                    double receiverCoins = getConfig().getDouble(receiver.getName() + ".coins", 0.0);
+
+                    getConfig().set(sender.getName() + ".coins", round(senderCoins - amount, 2));
+                    getConfig().set(receiver.getName() + ".coins", round(receiverCoins + amount, 2));
+                    saveConfig();
+
+                    sender.sendMessage(ChatColor.GREEN + "Вы передали " + amount + " монет игроку " + receiver.getName());
+                    receiver.sendMessage(ChatColor.GOLD + sender.getName() + " передал вам " + amount + " монет!");
+
+                    // Удаляем слушатель после использования
+                    AsyncPlayerChatEvent.getHandlerList().unregister(this);
+                }
+            }, this);
+        });
     }
 
     private void applyBuffs(Player player) {

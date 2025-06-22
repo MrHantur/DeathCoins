@@ -27,7 +27,7 @@ public class GUI implements Listener {
         ItemMeta teleportMeta = teleport.getItemMeta();
         teleportMeta.setDisplayName(ChatColor.GREEN + "Телепорт к смерти");
         teleport.setItemMeta(teleportMeta);
-        gui.setItem(3, teleport);
+        gui.setItem(2, teleport);
 
         // Проверить монеты
         ItemStack coins = new ItemStack(Material.GOLD_NUGGET);
@@ -36,7 +36,14 @@ public class GUI implements Listener {
                 plugin.getConfig().getDouble(player.getName() + ".coins", 0.0) +
                 ChatColor.YELLOW + " монет");
         coins.setItemMeta(coinsMeta);
-        gui.setItem(5, coins);
+        gui.setItem(4, coins);
+
+        // Передать монеты
+        ItemStack give = new ItemStack(Material.PAPER);
+        ItemMeta giveMeta = give.getItemMeta();
+        giveMeta.setDisplayName(ChatColor.AQUA + "Передать монеты");
+        give.setItemMeta(giveMeta);
+        gui.setItem(6, give);
 
         player.openInventory(gui);
     }
@@ -59,6 +66,25 @@ public class GUI implements Listener {
         player.openInventory(gui);
     }
 
+    public void openTransferGUI(Player sender) {
+        Inventory gui = Bukkit.createInventory(null, 9, ChatColor.BLUE + "Передача монет");
+
+        int i = 0;
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (target == sender) continue;
+
+            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+            ItemMeta meta = head.getItemMeta();
+            meta.setDisplayName(ChatColor.YELLOW + target.getName());
+            head.setItemMeta(meta);
+
+            gui.setItem(i++, head);
+        }
+
+        sender.openInventory(gui);
+    }
+
+
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getView().getTitle().equals(ChatColor.DARK_PURPLE + "Меню DeathCoins")) {
@@ -76,6 +102,8 @@ public class GUI implements Listener {
                 double coins = plugin.getConfig().getDouble(player.getName() + ".coins", 0.0);
                 player.sendMessage(ChatColor.YELLOW + "У вас " + ChatColor.GOLD +
                         coins + ChatColor.YELLOW + " монет смерти");
+            } else if (displayName.equals(ChatColor.AQUA + "Передать монеты")) {
+                openTransferGUI(player);
             }
         } else if (event.getView().getTitle().equals(ChatColor.DARK_RED + "ВЫ УВЕРЕНЫ?")) {
             event.setCancelled(true);
@@ -92,6 +120,22 @@ public class GUI implements Listener {
             } else if (displayName.equals(ChatColor.RED + "Я ошибся")) {
                 openGUI(player);
             }
+        } else if (event.getView().getTitle().equals(ChatColor.BLUE + "Передача монет")) {
+            event.setCancelled(true);
+
+            Player player = (Player) event.getWhoClicked();
+            ItemStack clicked = event.getCurrentItem();
+            if (clicked == null || !clicked.hasItemMeta()) return;
+
+            String targetName = ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+            Player target = plugin.getPlayerExactIgnoreCase(targetName);
+            if (target == null) {
+                player.sendMessage(ChatColor.RED + "Игрок не найден.");
+                return;
+            }
+
+            player.closeInventory();
+            plugin.askForAmount(player, target); // Запросить сумму через чат
         }
     }
 }
