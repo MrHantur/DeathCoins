@@ -289,7 +289,7 @@ public class Main extends JavaPlugin implements Listener {
 
     public void askForAmount(Player sender, Player receiver) {
         sender.sendMessage(ChatColor.AQUA + "Введите количество монет, которые хотите передать игроку " +
-                ChatColor.GOLD + receiver.getName());
+                ChatColor.GOLD + receiver.getName() + ChatColor.AQUA + "(Внимание! Комиссия 10%)");
 
         Bukkit.getScheduler().runTask(this, () -> {
             getServer().getPluginManager().registerEvents(new Listener() {
@@ -317,11 +317,11 @@ public class Main extends JavaPlugin implements Listener {
                     double receiverCoins = getConfig().getDouble(receiver.getName() + ".coins", 0.0);
 
                     getConfig().set(sender.getName() + ".coins", round(senderCoins - amount, 2));
-                    getConfig().set(receiver.getName() + ".coins", round(receiverCoins + amount, 2));
+                    getConfig().set(receiver.getName() + ".coins", round(receiverCoins + amount * 0.9, 2));
                     saveConfig();
 
-                    sender.sendMessage(ChatColor.GREEN + "Вы передали " + amount + " монет игроку " + receiver.getName());
-                    receiver.sendMessage(ChatColor.GOLD + sender.getName() + " передал вам " + amount + " монет!");
+                    sender.sendMessage(ChatColor.GREEN + "Вы передали " + amount * 0.9 + " монет игроку " + receiver.getName());
+                    receiver.sendMessage(ChatColor.GOLD + sender.getName() + " передал вам " + amount * 0.9 + " монет!");
 
                     // Удаляем слушатель после использования
                     AsyncPlayerChatEvent.getHandlerList().unregister(this);
