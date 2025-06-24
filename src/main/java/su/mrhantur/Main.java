@@ -20,17 +20,12 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.StringUtil;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main extends JavaPlugin implements Listener {
     private GUI gui;
+    private AfkTracker afkTracker;
 
     @Override
     public void onEnable() {
@@ -41,6 +36,7 @@ public class Main extends JavaPlugin implements Listener {
         getCommand("deathcoins").setExecutor(this);
         getCommand("deathcoins").setTabCompleter(this);
         gui = new GUI(this);
+        afkTracker = new AfkTracker(this);
 
         Bukkit.getConsoleSender().sendMessage("Death Coins plugin enabled!\n" +
                                                 "⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⠤⠤⠒⠒⠒⠒⠲⠦⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
@@ -63,6 +59,32 @@ public class Main extends JavaPlugin implements Listener {
                                                 "⠀⠀⠀⠀⠀⠀⠀⠘⢣⡀⢀⡀⠀⠙⢿⣿⣿⢏⠎⣼⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
                                                 "⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⣆⠙⠢⣕⣤⠙⠓⢋⡜⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
                                                 "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠑⠶⢦⠭⣽⡶⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀");
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    String name = player.getName();
+                    double currentCoins = getConfig().getDouble(name + ".coins", 0.0);
+
+                    double failChance = currentCoins + 0.2;
+                    double roll = Math.random(); // от 0.0 до 1.0
+
+                    if (!isAfk(player) && roll < failChance) {
+                        continue;
+                    }
+
+                    double reward = round(0.01 + Math.random() * 0.04, 2);
+                    double newTotal = round(currentCoins + reward, 2);
+
+                    getConfig().set(name + ".coins", newTotal);
+                    saveConfig();
+
+                    player.sendMessage(ChatColor.GRAY + "Вы получили " + reward + " монет смерти (/dc)");
+                }
+            }
+        }.runTaskTimer(this, 20 * 60 * 10, 20 * 60 * 10); // задержка и период в тиках (10 минут)
+
     }
 
     @EventHandler
@@ -102,7 +124,7 @@ public class Main extends JavaPlugin implements Listener {
 
             // Для второго аргумента (add/remove)
             if (args.length == 2) {
-                List<String> options = Arrays.asList("add", "remove");
+                List<String> options = Arrays.asList("add", "remove", "blacklist");
                 return StringUtil.copyPartialMatches(args[1], options, new ArrayList<>());
             }
 
@@ -173,6 +195,19 @@ public class Main extends JavaPlugin implements Listener {
 
 
     private void handleDeathCoinsCommand(CommandSender sender, String[] args) {
+        if (args.length == 2 && args[1].equalsIgnoreCase("blacklist")) {
+            String target = args[0];
+
+            if (isBlacklisted(target)) {
+                removeFromBlacklist(target);
+                sender.sendMessage(ChatColor.GREEN + "Игрок " + target + " удалён из чёрного списка.");
+            } else {
+                addToBlacklist(target);
+                sender.sendMessage(ChatColor.RED + "Игрок " + target + " добавлен в чёрный список (95% комиссия).");
+            }
+            return;
+        }
+
         if (args.length < 3) {
             sender.sendMessage("Подсказка: /deathcoins <nickname> <add|remove> <double>");
             return;
@@ -198,7 +233,7 @@ public class Main extends JavaPlugin implements Listener {
         switch (args[1].toLowerCase()) {
             case "add" -> {
                 coins = round(coins + delta, 2);
-                target.sendMessage(ChatColor.GREEN + "Вы заработали немного кусочков монет смерти!");
+                target.sendMessage(ChatColor.GREEN + "Вы заработали немного кусочков монет смерти! (/dc)");
             }
             case "remove" -> {
                 coins = round(coins - delta, 2);
@@ -245,6 +280,10 @@ public class Main extends JavaPlugin implements Listener {
         saveConfig();
     }
 
+    public boolean isAfk(Player player) {
+        return afkTracker.isAfk(player);
+    }
+
     void teleportToDeath(Player player) {
         String nickname = player.getName();
         World world = Bukkit.getWorld(getConfig().getString(nickname + ".world", "world"));
@@ -289,7 +328,8 @@ public class Main extends JavaPlugin implements Listener {
 
     public void askForAmount(Player sender, Player receiver) {
         sender.sendMessage(ChatColor.AQUA + "Введите количество монет, которые хотите передать игроку " +
-                ChatColor.GOLD + receiver.getName() + ChatColor.AQUA + "(Внимание! Комиссия 10%)");
+                ChatColor.GOLD + receiver.getName() + ChatColor.RED +
+                (isBlacklisted(sender.getName()) ? "(Внимание! Комиссия 10%)" : "Внимание! Комиссия 95%"));
 
         Bukkit.getScheduler().runTask(this, () -> {
             getServer().getPluginManager().registerEvents(new Listener() {
@@ -314,20 +354,50 @@ public class Main extends JavaPlugin implements Listener {
                         return;
                     }
 
+                    double commissionRate = isBlacklisted(sender.getName()) ? 0.95 : 0.10;
+                    double finalAmount = round(amount * (1.0 - commissionRate), 2);
+
                     double receiverCoins = getConfig().getDouble(receiver.getName() + ".coins", 0.0);
 
                     getConfig().set(sender.getName() + ".coins", round(senderCoins - amount, 2));
-                    getConfig().set(receiver.getName() + ".coins", round(receiverCoins + amount * 0.9, 2));
+                    getConfig().set(receiver.getName() + ".coins", round(receiverCoins + finalAmount, 2));
                     saveConfig();
 
-                    sender.sendMessage(ChatColor.GREEN + "Вы передали " + amount * 0.9 + " монет игроку " + receiver.getName());
-                    receiver.sendMessage(ChatColor.GOLD + sender.getName() + " передал вам " + amount * 0.9 + " монет!");
+                    sender.sendMessage(ChatColor.GREEN + "Вы передали " + finalAmount + " монет игроку " + receiver.getName());
+                    receiver.sendMessage(ChatColor.GOLD + sender.getName() + " передал вам " + finalAmount + " монет!");
 
                     // Удаляем слушатель после использования
                     AsyncPlayerChatEvent.getHandlerList().unregister(this);
                 }
             }, this);
         });
+    }
+
+    private final Set<String> blacklist = new HashSet<>();
+
+    public void loadBlacklist() {
+        List<String> list = getConfig().getStringList("blacklist");
+        blacklist.clear();
+        blacklist.addAll(list);
+    }
+
+    public void saveBlacklist() {
+        getConfig().set("blacklist", new ArrayList<>(blacklist));
+        saveConfig();
+    }
+
+    public void addToBlacklist(String playerName) {
+        blacklist.add(playerName.toLowerCase());
+        saveBlacklist();
+    }
+
+    public void removeFromBlacklist(String playerName) {
+        blacklist.remove(playerName.toLowerCase());
+        saveBlacklist();
+    }
+
+    public boolean isBlacklisted(String playerName) {
+        return blacklist.contains(playerName.toLowerCase());
     }
 
     private void applyBuffs(Player player) {
