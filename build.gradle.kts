@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "su.mrhantur"
-version = "1.3"
+version = "1.4"
 
 repositories {
     maven {

@@ -7,6 +7,7 @@ import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -25,7 +26,6 @@ import java.util.stream.Collectors;
 
 public class Main extends JavaPlugin implements Listener {
     private GUI gui;
-    private AfkTracker afkTracker;
 
     @Override
     public void onEnable() {
@@ -36,7 +36,6 @@ public class Main extends JavaPlugin implements Listener {
         getCommand("deathcoins").setExecutor(this);
         getCommand("deathcoins").setTabCompleter(this);
         gui = new GUI(this);
-        afkTracker = new AfkTracker(this);
 
         Bukkit.getConsoleSender().sendMessage("Death Coins plugin enabled!\n" +
                                                 "⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⠤⠤⠒⠒⠒⠒⠲⠦⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀\n" +
@@ -67,14 +66,16 @@ public class Main extends JavaPlugin implements Listener {
                     String name = player.getName();
                     double currentCoins = getConfig().getDouble(name + ".coins", 0.0);
 
-                    double failChance = currentCoins + 0.2;
+                    double failChance = currentCoins + 0.1;
                     double roll = Math.random(); // от 0.0 до 1.0
 
-                    if (!isAfk(player) && roll < failChance) {
+                    // player.sendMessage("failChance " + failChance + "   roll " + roll);
+
+                    if (roll < failChance) {
                         continue;
                     }
 
-                    double reward = round(0.01 + Math.random() * 0.04, 2);
+                    double reward = round(0.01 + Math.random() * 0.02, 2);
                     double newTotal = round(currentCoins + reward, 2);
 
                     getConfig().set(name + ".coins", newTotal);
@@ -91,14 +92,36 @@ public class Main extends JavaPlugin implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         String nickname = player.getName();
+        String ip = player.getAddress().getAddress().getHostAddress();
+
+        // Карта IP → ник
+        ConfigurationSection ipMap = getConfig().getConfigurationSection("ipMap");
+        if (ipMap == null) {
+            ipMap = getConfig().createSection("ipMap");
+        }
+
+        // Проверка на конфликт IP
+        String storedNickname = getConfig().getString("ipMap." + ip);
+        if (storedNickname == null) {
+            // Привязываем IP к нику, если ещё не был
+            getConfig().set("ipMap." + ip, nickname);
+            saveConfig();
+        } else if (!storedNickname.equalsIgnoreCase(nickname)) {
+            // Если IP уже привязан к другому нику — в blacklist
+            if (!isBlacklisted(nickname)) {
+                addToBlacklist(nickname);
+                Bukkit.getConsoleSender().sendMessage(ChatColor.RED + "[DeathCoins] Игрок " + nickname +
+                        " зашёл с IP " + ip + ", уже использованным " + storedNickname + ". Добавлен в чёрный список.");
+            }
+        }
 
         if (!player.hasPlayedBefore()) {
             savePlayerLocation(player);
-
             getConfig().set(nickname + ".coins", 0.0);
             saveConfig();
         }
     }
+
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
@@ -280,9 +303,6 @@ public class Main extends JavaPlugin implements Listener {
         saveConfig();
     }
 
-    public boolean isAfk(Player player) {
-        return afkTracker.isAfk(player);
-    }
 
     void teleportToDeath(Player player) {
         String nickname = player.getName();
@@ -329,7 +349,7 @@ public class Main extends JavaPlugin implements Listener {
     public void askForAmount(Player sender, Player receiver) {
         sender.sendMessage(ChatColor.AQUA + "Введите количество монет, которые хотите передать игроку " +
                 ChatColor.GOLD + receiver.getName() + ChatColor.RED +
-                (isBlacklisted(sender.getName()) ? "(Внимание! Комиссия 10%)" : "Внимание! Комиссия 95%"));
+                (isBlacklisted(sender.getName()) ? " (Внимание! Комиссия 95%)" : " (Внимание! Комиссия 10%)"));
 
         Bukkit.getScheduler().runTask(this, () -> {
             getServer().getPluginManager().registerEvents(new Listener() {
@@ -344,18 +364,26 @@ public class Main extends JavaPlugin implements Listener {
                     try {
                         amount = Double.parseDouble(message);
                     } catch (NumberFormatException e) {
-                        sender.sendMessage(ChatColor.RED + "Введите корректное число.");
+                        sender.sendMessage(ChatColor.RED + "Некорректное число.");
+                        AsyncPlayerChatEvent.getHandlerList().unregister(this);
                         return;
                     }
 
                     double senderCoins = getConfig().getDouble(sender.getName() + ".coins", 0.0);
                     if (senderCoins < amount || amount <= 0) {
                         sender.sendMessage(ChatColor.RED + "Недостаточно монет или сумма некорректна.");
+                        AsyncPlayerChatEvent.getHandlerList().unregister(this);
                         return;
                     }
 
                     double commissionRate = isBlacklisted(sender.getName()) ? 0.95 : 0.10;
                     double finalAmount = round(amount * (1.0 - commissionRate), 2);
+
+                    if (finalAmount == 0.01) {
+                        sender.sendMessage(ChatColor.RED + "Итоговая сумма должна быть больше 0.01");
+                        AsyncPlayerChatEvent.getHandlerList().unregister(this);
+                        return;
+                    }
 
                     double receiverCoins = getConfig().getDouble(receiver.getName() + ".coins", 0.0);
 
